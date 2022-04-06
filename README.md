@@ -1,4 +1,4 @@
-# landsat_download.py
+# landsat_download.ipynb
 
 This python script downloads Landsat 7 and/or 8 images from Google Earth Engine for a given area and timeperiod. It masks the clouds from the images and calculates landcover indices of the images. It can calculate the landcover indices NDVI, NDMI, NDBI, NDWI, and SAVI. It is meant to be run in Google Colab. To run it, you need a Google Earth Engine account.
 
