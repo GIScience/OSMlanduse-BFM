@@ -1,4 +1,4 @@
-landsat_download.py
+# landsat_download.py
 
 This python script downloads Landsat 7 and/or 8 images from Google Earth Engine for a given area and timeperiod. It masks the clouds from the images and calculates landcover indices of the images. It can calculate the landcover indices NDVI, NDMI, NDBI, NDWI, and SAVI. It is meant to be run in Google Colab. To run it, you need a Google Earth Engine account.
 
@@ -11,8 +11,7 @@ OUTPUT:
 - The script saves the timeseries of Landsat images cropped to the study area with calculated landcover index in your Google Drive.
 
 
-
-mask_raster_landcover.py
+# mask_raster_landcover.py
 
 This python script masks all raster files in a specified folder to a shapefile. It can be used to mask the Landsat timeseries downloaded from Google Earth Engine to the initial LULC classes from OSMlanduse.
 
@@ -24,8 +23,7 @@ OUTPUT:
 - Landsat timeseries (with calculated landcover index) masked to the areas of the initial OSM LULC class. The masked Landsat timeseries should be saved in ./data/landsat/<INDEX FOLDER>.
 
 
-
-bfm_lulc_change.Rmd
+# bfm_lulc_change.Rmd
 
 This document contains the R code to derive the LULC changes with the OSMlanduse+ method (OSMlanduse changes refined with Landsat timeseries data). The BFAST settings are optimized for the LULC change study of Baden-Württemberg from March 2018 until October 2019.
 
@@ -38,8 +36,7 @@ OUTPUT:
 - Printouts of the LULC change emissions for each LULC transition and CO2 emission attribution method, once per sub-tile and once per Landsat tile. Unfortunately, the calculation of the total emissions in the study area is not included in this script.
 
 
-
-mosaik_raster.R
+# mosaik_raster.R
 
 This R script mosaics the LULC change maps of the Landsat sub-tiles to one LULC change map and saves it as a Geotiff.
 
@@ -50,8 +47,7 @@ OUTPUT:
 - Mosaicked LULC change maps as Geotiffs, saved in the directory ./output
 
 
-
-bfm_test.Rmd
+# bfm_test.Rmd
 
 This document contains the R scripts to test the different BFAST settings for Landsat timeseries of each initial LULC class in test areas.
 
