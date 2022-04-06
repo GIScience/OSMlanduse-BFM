@@ -1,0 +1,1246 @@
+---
+title: "bfm_test"
+author: "Veit Ulrich"
+date: "4/5/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(bfastSpatial)
+library(TDPanalysis)
+require(rgdal)
+require(rgeos)
+source('./src/intersectExtent.R') # find common extent
+tmp = './raster_temp' # directory to store raster brick files
+rasterOptions(tmpdir=tmp) # set temp dir
+```
+
+###01_ndvi
+
+```{r}
+###Intersect extent and generate rasterbricks
+
+setwd('.data/landsat/NDVI_test')
+
+fl <- list.files() # tile's raster list
+ 
+#generate empty list to store new file names
+your_length <- 0
+fl2 <- rep(NA, your_length)
+
+#generate new file names and append them to fl2
+for (file in fl){
+  d <- file
+  n = paste0(substr(d, 0, 2), substr(d, 4, 4), substr(d, 6, 11), substr(d, 13, 16))
+  date = paste0(substr(d, 13, 16), sep = "/", substr(d, 17, 18), sep = "/", substr(d, 19, 20))
+  name = paste0(n, date.to.DOY(date=date, format = "yyyy/mm/dd"),substr(d, 21, 24))
+  if (nchar(name) < 19) {name = paste0(substr(name, 1, 13), sep = "00", substr(name, 14, 18))}
+  else if (nchar(name) < 20) {name = paste0(substr(name, 1, 13), sep = "0", substr(name, 14, 19))}
+  fl2 <- c(fl2, name)
+}
+
+#rename files
+file.rename(fl, fl2)
+
+ext <- intersectExtent(lapply(fl2, brick)) # calculate tile's intersect extent
+
+for (i in 1:length(fl2)){
+  r <- crop(raster(fl2[i]), ext) # create extent image
+  writeRaster(r, filename = paste0(fl2[i], '_ext'), format = "GTiff", dataype = "INT32", overwrite = T) # output
+}
+
+#print('creating raster brick for ndvi')
+ndvi = brick(mclapply(fl2, raster))#createbrick
+
+# assign NA value
+ndvi[ndvi == 0] <- NA
+
+
+###Run BFM
+
+# print('running bfms for NDVI')
+bfm_ndvi_1_all = bfmSpatial(ndvi, start=c(2018,60), order=1, history = c("all"), mc.cores = 32)
+bfm_ndvi_1_roc = bfmSpatial(ndvi, start=c(2018,60), order=1, history = c("ROC"), mc.cores = 32)
+bfm_ndvi_2_all = bfmSpatial(ndvi, start=c(2018,60), order=2, history = c("all"), mc.cores = 32)
+bfm_ndvi_2_roc = bfmSpatial(ndvi, start=c(2018,60), order=2, history = c("ROC"), mc.cores = 32)
+bfm_ndvi_3_all = bfmSpatial(ndvi, start=c(2018,60), order=3, history = c("all"), mc.cores = 32)
+bfm_ndvi_3_roc = bfmSpatial(ndvi, start=c(2018,60), order=3, history = c("ROC"), mc.cores = 32)
+
+
+
+###APPLY CHANGE THRESHOLDS
+
+#make empty map list
+l1 = c()
+
+#make empty dataframes for overlap and perc_overlap
+mat = matrix(ncol = 2, nrow = 0)
+ol <- data.frame(mat)
+perc <- data.frame(mat)
+perc_l <- data.frame(mat)
+
+
+print('creating change maps for NDVI')
+
+change = bfm_ndvi_1_all[[1]]
+magn = bfm_ndvi_1_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndvi_1_all_magnthresh1 = magn_bkp
+bfm_ndvi_1_all_magnthresh2 = magn_bkp
+bfm_ndvi_1_all_magnthresh3 = magn_bkp
+bfm_ndvi_1_all_magnthresh4 = magn_bkp
+bfm_ndvi_1_all_magnthresh5 = magn_bkp
+bfm_ndvi_1_all_magnthresh6 = magn_bkp
+bfm_ndvi_1_all_magnthresh7 = magn_bkp
+bfm_ndvi_1_all_magnthresh8 = magn_bkp
+bfm_ndvi_1_all_magnthresh9 = magn_bkp
+bfm_ndvi_1_all_magnthresh10 = magn_bkp
+
+names(bfm_ndvi_1_all_magnthresh1) = 'bfm_ndvi_1_all_magnthresh1'
+names(bfm_ndvi_1_all_magnthresh2) = 'bfm_ndvi_1_all_magnthresh2'
+names(bfm_ndvi_1_all_magnthresh3) = 'bfm_ndvi_1_all_magnthresh3'
+names(bfm_ndvi_1_all_magnthresh4) = 'bfm_ndvi_1_all_magnthresh4'
+names(bfm_ndvi_1_all_magnthresh5) = 'bfm_ndvi_1_all_magnthresh5'
+names(bfm_ndvi_1_all_magnthresh6) = 'bfm_ndvi_1_all_magnthresh6'
+names(bfm_ndvi_1_all_magnthresh7) = 'bfm_ndvi_1_all_magnthresh7'
+names(bfm_ndvi_1_all_magnthresh8) = 'bfm_ndvi_1_all_magnthresh8'
+names(bfm_ndvi_1_all_magnthresh9) = 'bfm_ndvi_1_all_magnthresh9'
+names(bfm_ndvi_1_all_magnthresh10) = 'bfm_ndvi_1_all_magnthresh10'
+
+bfm_ndvi_1_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndvi_1_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndvi_1_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndvi_1_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndvi_1_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndvi_1_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndvi_1_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndvi_1_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndvi_1_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndvi_1_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l1 = append(l1, bfm_ndvi_1_all_magnthresh1)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh2)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh3)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh4)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh5)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh6)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh7)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh8)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh9)
+l1 = append(l1, bfm_ndvi_1_all_magnthresh10)
+
+
+change = bfm_ndvi_1_roc[[1]]
+magn = bfm_ndvi_1_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndvi_1_roc_magnthresh1 = magn_bkp
+bfm_ndvi_1_roc_magnthresh2 = magn_bkp
+bfm_ndvi_1_roc_magnthresh3 = magn_bkp
+bfm_ndvi_1_roc_magnthresh4 = magn_bkp
+bfm_ndvi_1_roc_magnthresh5 = magn_bkp
+bfm_ndvi_1_roc_magnthresh6 = magn_bkp
+bfm_ndvi_1_roc_magnthresh7 = magn_bkp
+bfm_ndvi_1_roc_magnthresh8 = magn_bkp
+bfm_ndvi_1_roc_magnthresh9 = magn_bkp
+bfm_ndvi_1_roc_magnthresh10 = magn_bkp
+
+names(bfm_ndvi_1_roc_magnthresh1) = 'bfm_ndvi_1_roc_magnthresh1'
+names(bfm_ndvi_1_roc_magnthresh2) = 'bfm_ndvi_1_roc_magnthresh2'
+names(bfm_ndvi_1_roc_magnthresh3) = 'bfm_ndvi_1_roc_magnthresh3'
+names(bfm_ndvi_1_roc_magnthresh4) = 'bfm_ndvi_1_roc_magnthresh4'
+names(bfm_ndvi_1_roc_magnthresh5) = 'bfm_ndvi_1_roc_magnthresh5'
+names(bfm_ndvi_1_roc_magnthresh6) = 'bfm_ndvi_1_roc_magnthresh6'
+names(bfm_ndvi_1_roc_magnthresh7) = 'bfm_ndvi_1_roc_magnthresh7'
+names(bfm_ndvi_1_roc_magnthresh8) = 'bfm_ndvi_1_roc_magnthresh8'
+names(bfm_ndvi_1_roc_magnthresh9) = 'bfm_ndvi_1_roc_magnthresh9'
+names(bfm_ndvi_1_roc_magnthresh10) = 'bfm_ndvi_1_roc_magnthresh10'
+
+bfm_ndvi_1_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndvi_1_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndvi_1_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndvi_1_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndvi_1_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndvi_1_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndvi_1_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndvi_1_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndvi_1_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndvi_1_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh1)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh2)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh3)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh4)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh5)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh6)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh7)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh8)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh9)
+l1 = append(l1, bfm_ndvi_1_roc_magnthresh10)
+
+
+change = bfm_ndvi_2_all[[1]]
+magn = bfm_ndvi_2_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndvi_2_all_magnthresh1 = magn_bkp
+bfm_ndvi_2_all_magnthresh2 = magn_bkp
+bfm_ndvi_2_all_magnthresh3 = magn_bkp
+bfm_ndvi_2_all_magnthresh4 = magn_bkp
+bfm_ndvi_2_all_magnthresh5 = magn_bkp
+bfm_ndvi_2_all_magnthresh6 = magn_bkp
+bfm_ndvi_2_all_magnthresh7 = magn_bkp
+bfm_ndvi_2_all_magnthresh8 = magn_bkp
+bfm_ndvi_2_all_magnthresh9 = magn_bkp
+bfm_ndvi_2_all_magnthresh10 = magn_bkp
+
+names(bfm_ndvi_2_all_magnthresh1) = 'bfm_ndvi_2_all_magnthresh1'
+names(bfm_ndvi_2_all_magnthresh2) = 'bfm_ndvi_2_all_magnthresh2'
+names(bfm_ndvi_2_all_magnthresh3) = 'bfm_ndvi_2_all_magnthresh3'
+names(bfm_ndvi_2_all_magnthresh4) = 'bfm_ndvi_2_all_magnthresh4'
+names(bfm_ndvi_2_all_magnthresh5) = 'bfm_ndvi_2_all_magnthresh5'
+names(bfm_ndvi_2_all_magnthresh6) = 'bfm_ndvi_2_all_magnthresh6'
+names(bfm_ndvi_2_all_magnthresh7) = 'bfm_ndvi_2_all_magnthresh7'
+names(bfm_ndvi_2_all_magnthresh8) = 'bfm_ndvi_2_all_magnthresh8'
+names(bfm_ndvi_2_all_magnthresh9) = 'bfm_ndvi_2_all_magnthresh9'
+names(bfm_ndvi_2_all_magnthresh10) = 'bfm_ndvi_2_all_magnthresh10'
+
+bfm_ndvi_2_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndvi_2_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndvi_2_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndvi_2_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndvi_2_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndvi_2_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndvi_2_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndvi_2_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndvi_2_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndvi_2_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l1 = append(l1, bfm_ndvi_2_all_magnthresh1)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh2)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh3)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh4)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh5)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh6)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh7)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh8)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh9)
+l1 = append(l1, bfm_ndvi_2_all_magnthresh10)
+
+
+change = bfm_ndvi_2_roc[[1]]
+magn = bfm_ndvi_2_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndvi_2_roc_magnthresh1 = magn_bkp
+bfm_ndvi_2_roc_magnthresh2 = magn_bkp
+bfm_ndvi_2_roc_magnthresh3 = magn_bkp
+bfm_ndvi_2_roc_magnthresh4 = magn_bkp
+bfm_ndvi_2_roc_magnthresh5 = magn_bkp
+bfm_ndvi_2_roc_magnthresh6 = magn_bkp
+bfm_ndvi_2_roc_magnthresh7 = magn_bkp
+bfm_ndvi_2_roc_magnthresh8 = magn_bkp
+bfm_ndvi_2_roc_magnthresh9 = magn_bkp
+bfm_ndvi_2_roc_magnthresh10 = magn_bkp
+
+names(bfm_ndvi_2_roc_magnthresh1) = 'bfm_ndvi_2_roc_magnthresh1'
+names(bfm_ndvi_2_roc_magnthresh2) = 'bfm_ndvi_2_roc_magnthresh2'
+names(bfm_ndvi_2_roc_magnthresh3) = 'bfm_ndvi_2_roc_magnthresh3'
+names(bfm_ndvi_2_roc_magnthresh4) = 'bfm_ndvi_2_roc_magnthresh4'
+names(bfm_ndvi_2_roc_magnthresh5) = 'bfm_ndvi_2_roc_magnthresh5'
+names(bfm_ndvi_2_roc_magnthresh6) = 'bfm_ndvi_2_roc_magnthresh6'
+names(bfm_ndvi_2_roc_magnthresh7) = 'bfm_ndvi_2_roc_magnthresh7'
+names(bfm_ndvi_2_roc_magnthresh8) = 'bfm_ndvi_2_roc_magnthresh8'
+names(bfm_ndvi_2_roc_magnthresh9) = 'bfm_ndvi_2_roc_magnthresh9'
+names(bfm_ndvi_2_roc_magnthresh10) = 'bfm_ndvi_2_roc_magnthresh10'
+
+bfm_ndvi_2_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndvi_2_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndvi_2_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndvi_2_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndvi_2_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndvi_2_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndvi_2_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndvi_2_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndvi_2_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndvi_2_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh1)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh2)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh3)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh4)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh5)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh6)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh7)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh8)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh9)
+l1 = append(l1, bfm_ndvi_2_roc_magnthresh10)
+
+
+change = bfm_ndvi_3_all[[1]]
+magn = bfm_ndvi_3_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndvi_3_all_magnthresh1 = magn_bkp
+bfm_ndvi_3_all_magnthresh2 = magn_bkp
+bfm_ndvi_3_all_magnthresh3 = magn_bkp
+bfm_ndvi_3_all_magnthresh4 = magn_bkp
+bfm_ndvi_3_all_magnthresh5 = magn_bkp
+bfm_ndvi_3_all_magnthresh6 = magn_bkp
+bfm_ndvi_3_all_magnthresh7 = magn_bkp
+bfm_ndvi_3_all_magnthresh8 = magn_bkp
+bfm_ndvi_3_all_magnthresh9 = magn_bkp
+bfm_ndvi_3_all_magnthresh10 = magn_bkp
+
+names(bfm_ndvi_3_all_magnthresh1) = 'bfm_ndvi_3_all_magnthresh1'
+names(bfm_ndvi_3_all_magnthresh2) = 'bfm_ndvi_3_all_magnthresh2'
+names(bfm_ndvi_3_all_magnthresh3) = 'bfm_ndvi_3_all_magnthresh3'
+names(bfm_ndvi_3_all_magnthresh4) = 'bfm_ndvi_3_all_magnthresh4'
+names(bfm_ndvi_3_all_magnthresh5) = 'bfm_ndvi_3_all_magnthresh5'
+names(bfm_ndvi_3_all_magnthresh6) = 'bfm_ndvi_3_all_magnthresh6'
+names(bfm_ndvi_3_all_magnthresh7) = 'bfm_ndvi_3_all_magnthresh7'
+names(bfm_ndvi_3_all_magnthresh8) = 'bfm_ndvi_3_all_magnthresh8'
+names(bfm_ndvi_3_all_magnthresh9) = 'bfm_ndvi_3_all_magnthresh9'
+names(bfm_ndvi_3_all_magnthresh10) = 'bfm_ndvi_3_all_magnthresh10'
+
+bfm_ndvi_3_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndvi_3_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndvi_3_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndvi_3_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndvi_3_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndvi_3_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndvi_3_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndvi_3_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndvi_3_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndvi_3_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l1 = append(l1, bfm_ndvi_3_all_magnthresh1)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh2)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh3)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh4)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh5)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh6)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh7)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh8)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh9)
+l1 = append(l1, bfm_ndvi_3_all_magnthresh10)
+
+
+change = bfm_ndvi_3_roc[[1]]
+magn = bfm_ndvi_3_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndvi_3_roc_magnthresh1 = magn_bkp
+bfm_ndvi_3_roc_magnthresh2 = magn_bkp
+bfm_ndvi_3_roc_magnthresh3 = magn_bkp
+bfm_ndvi_3_roc_magnthresh4 = magn_bkp
+bfm_ndvi_3_roc_magnthresh5 = magn_bkp
+bfm_ndvi_3_roc_magnthresh6 = magn_bkp
+bfm_ndvi_3_roc_magnthresh7 = magn_bkp
+bfm_ndvi_3_roc_magnthresh8 = magn_bkp
+bfm_ndvi_3_roc_magnthresh9 = magn_bkp
+bfm_ndvi_3_roc_magnthresh10 = magn_bkp
+
+names(bfm_ndvi_3_roc_magnthresh1) = 'bfm_ndvi_3_roc_magnthresh1'
+names(bfm_ndvi_3_roc_magnthresh2) = 'bfm_ndvi_3_roc_magnthresh2'
+names(bfm_ndvi_3_roc_magnthresh3) = 'bfm_ndvi_3_roc_magnthresh3'
+names(bfm_ndvi_3_roc_magnthresh4) = 'bfm_ndvi_3_roc_magnthresh4'
+names(bfm_ndvi_3_roc_magnthresh5) = 'bfm_ndvi_3_roc_magnthresh5'
+names(bfm_ndvi_3_roc_magnthresh6) = 'bfm_ndvi_3_roc_magnthresh6'
+names(bfm_ndvi_3_roc_magnthresh7) = 'bfm_ndvi_3_roc_magnthresh7'
+names(bfm_ndvi_3_roc_magnthresh8) = 'bfm_ndvi_3_roc_magnthresh8'
+names(bfm_ndvi_3_roc_magnthresh9) = 'bfm_ndvi_3_roc_magnthresh9'
+names(bfm_ndvi_3_roc_magnthresh10) = 'bfm_ndvi_3_roc_magnthresh10'
+
+bfm_ndvi_3_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndvi_3_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndvi_3_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndvi_3_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndvi_3_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndvi_3_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndvi_3_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndvi_3_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndvi_3_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndvi_3_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh1)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh2)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh3)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh4)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh5)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh6)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh7)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh8)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh9)
+l1 = append(l1, bfm_ndvi_3_roc_magnthresh10)
+
+
+
+###Derive overlap, make plots and CSVs
+
+for (map in l1)
+{
+  #bfm change raster
+  x = map
+
+  #laverdi change raster
+  y = raster('./data/laverdi_test_pasture.tif')
+
+  #derive overlap
+  overlap = mask(crop(x, y), y)
+  mypath <- paste(".data/landsat/NDVI_test/plots/", names(x), ".png", sep = "")
+  png(file = mypath)
+  title = names(x)
+  plot(x, main = title, legend = FALSE)
+  plot(y, add=TRUE, col='red', legend = FALSE)
+  plot(overlap, add=TRUE, col='blue', lwd=2, legend = FALSE)
+  dev.off()
+
+  #export change map as tiff
+  mappath = paste(".data/landsat/NDVI_test/maps/", names(x), ".png", sep = "")
+  writeRaster(overlap, mappath, format = "GTiff")
+
+  #calculate number of overlapping cells
+  overlap[!is.na(overlap)]<-1
+  f= data.frame(freq(overlap))
+  ol = rbind(ol, f)
+
+  #calculate percentage of overlap wrt total bfm change
+  x[!is.na(x)]<-1
+  g=freq(x)
+  h=data.frame(f[1,2]/g[1,2]*100)
+  perc = rbind(perc, h)
+
+  #calculate percentage of overlap wrt total laverdi change
+  y[!is.na(y)]<-1
+  i=freq(y)
+  j=data.frame(f[1,2]/i[1,2]*100)
+  perc_l = rbind(perc_l, j)
+}
+
+write.csv(ol,".data/landsat/NDVI_test/plots/overlap.csv")
+write.csv(perc,".data/landsat/NDVI_test/plots/perc_overlap.csv")
+write.csv(perc_l,".data/landsat/NDVI_test/plots/perc_overlap_laverdi.csv")
+```
+
+###02_ndmi
+
+```{r}
+###intersect extent and generate rasterbricks
+
+setwd('.data/landsat/NDMI_test')
+
+#generate original file list
+fl = list.files()
+
+#generate empty list to store new file names
+your_length <- 0
+fl2 <- rep(NA, your_length)
+
+#generate new file names and append them to fl2
+for (file in fl){
+  d <- file
+  n = paste0(substr(d, 0, 2), substr(d, 4, 4), substr(d, 6, 11), substr(d, 13, 16))
+  date = paste0(substr(d, 13, 16), sep = "/", substr(d, 17, 18), sep = "/", substr(d, 19, 20))
+  name = paste0(n, date.to.DOY(date=date, format = "yyyy/mm/dd"),substr(d, 21, 24))
+  if (nchar(name) < 19) {name = paste0(substr(name, 1, 13), sep = "00", substr(name, 14, 18))}
+  else if (nchar(name) < 20) {name = paste0(substr(name, 1, 13), sep = "0", substr(name, 14, 19))}
+  fl2 <- c(fl2, name)
+}
+
+#rename files
+file.rename(fl, fl2)
+
+ext <- intersectExtent(lapply(fl2, brick)) # calculate tile's intersect extent
+
+for (i in 1:length(fl2)){
+  r <- crop(raster(fl2[i]), ext) # create extent image
+  writeRaster(r, filename = paste0(fl2[i], '_ext'), format = "GTiff", dataype = "INT32", overwrite = T) # output
+}
+
+print('creating raster brick for NDMI')
+ndmi = brick(mclapply(fl,raster))#createbrick
+# assign NA value
+ndmi[ndmi == 0] <- NA
+
+
+
+###RUN BFM
+
+print('running bfms for NDMI')
+bfm_ndmi_1_all = bfmSpatial(ndmi, start=c(2018,60), order=1, history = c("all"), mc.cores = 32)
+bfm_ndmi_1_roc = bfmSpatial(ndmi, start=c(2018,60), order=1, history = c("ROC"), mc.cores = 32)
+bfm_ndmi_2_all = bfmSpatial(ndmi, start=c(2018,60), order=2, history = c("all"), mc.cores = 32)
+bfm_ndmi_2_roc = bfmSpatial(ndmi, start=c(2018,60), order=2, history = c("ROC"), mc.cores = 32)
+bfm_ndmi_3_all = bfmSpatial(ndmi, start=c(2018,60), order=3, history = c("all"), mc.cores = 32)
+bfm_ndmi_3_roc = bfmSpatial(ndmi, start=c(2018,60), order=3, history = c("ROC"), mc.cores = 32)
+
+
+
+###APPLY CHANGE THRESHOLDS
+
+#make empty map list
+l2 = c()
+
+#make empty dataframes for overlap and perc_overlap
+mat = matrix(ncol = 2, nrow = 0)
+ol <- data.frame(mat)
+perc <- data.frame(mat)
+perc_l <- data.frame(mat)
+
+print('creating change maps for NDMI')
+
+change = bfm_ndmi_1_all[[1]]
+magn = bfm_ndmi_1_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndmi_1_all_magnthresh1 = magn_bkp
+bfm_ndmi_1_all_magnthresh2 = magn_bkp
+bfm_ndmi_1_all_magnthresh3 = magn_bkp
+bfm_ndmi_1_all_magnthresh4 = magn_bkp
+bfm_ndmi_1_all_magnthresh5 = magn_bkp
+bfm_ndmi_1_all_magnthresh6 = magn_bkp
+bfm_ndmi_1_all_magnthresh7 = magn_bkp
+bfm_ndmi_1_all_magnthresh8 = magn_bkp
+bfm_ndmi_1_all_magnthresh9 = magn_bkp
+bfm_ndmi_1_all_magnthresh10 = magn_bkp
+
+names(bfm_ndmi_1_all_magnthresh1) = 'bfm_ndmi_1_all_magnthresh1'
+names(bfm_ndmi_1_all_magnthresh2) = 'bfm_ndmi_1_all_magnthresh2'
+names(bfm_ndmi_1_all_magnthresh3) = 'bfm_ndmi_1_all_magnthresh3'
+names(bfm_ndmi_1_all_magnthresh4) = 'bfm_ndmi_1_all_magnthresh4'
+names(bfm_ndmi_1_all_magnthresh5) = 'bfm_ndmi_1_all_magnthresh5'
+names(bfm_ndmi_1_all_magnthresh6) = 'bfm_ndmi_1_all_magnthresh6'
+names(bfm_ndmi_1_all_magnthresh7) = 'bfm_ndmi_1_all_magnthresh7'
+names(bfm_ndmi_1_all_magnthresh8) = 'bfm_ndmi_1_all_magnthresh8'
+names(bfm_ndmi_1_all_magnthresh9) = 'bfm_ndmi_1_all_magnthresh9'
+names(bfm_ndmi_1_all_magnthresh10) = 'bfm_ndmi_1_all_magnthresh10'
+
+bfm_ndmi_1_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndmi_1_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndmi_1_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndmi_1_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndmi_1_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndmi_1_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndmi_1_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndmi_1_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndmi_1_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndmi_1_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l2 = append(l2, bfm_ndmi_1_all_magnthresh1)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh2)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh3)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh4)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh5)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh6)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh7)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh8)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh9)
+l2 = append(l2, bfm_ndmi_1_all_magnthresh10)
+
+
+change = bfm_ndmi_1_roc[[1]]
+magn = bfm_ndmi_1_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndmi_1_roc_magnthresh1 = magn_bkp
+bfm_ndmi_1_roc_magnthresh2 = magn_bkp
+bfm_ndmi_1_roc_magnthresh3 = magn_bkp
+bfm_ndmi_1_roc_magnthresh4 = magn_bkp
+bfm_ndmi_1_roc_magnthresh5 = magn_bkp
+bfm_ndmi_1_roc_magnthresh6 = magn_bkp
+bfm_ndmi_1_roc_magnthresh7 = magn_bkp
+bfm_ndmi_1_roc_magnthresh8 = magn_bkp
+bfm_ndmi_1_roc_magnthresh9 = magn_bkp
+bfm_ndmi_1_roc_magnthresh10 = magn_bkp
+
+names(bfm_ndmi_1_roc_magnthresh1) = 'bfm_ndmi_1_roc_magnthresh1'
+names(bfm_ndmi_1_roc_magnthresh2) = 'bfm_ndmi_1_roc_magnthresh2'
+names(bfm_ndmi_1_roc_magnthresh3) = 'bfm_ndmi_1_roc_magnthresh3'
+names(bfm_ndmi_1_roc_magnthresh4) = 'bfm_ndmi_1_roc_magnthresh4'
+names(bfm_ndmi_1_roc_magnthresh5) = 'bfm_ndmi_1_roc_magnthresh5'
+names(bfm_ndmi_1_roc_magnthresh6) = 'bfm_ndmi_1_roc_magnthresh6'
+names(bfm_ndmi_1_roc_magnthresh7) = 'bfm_ndmi_1_roc_magnthresh7'
+names(bfm_ndmi_1_roc_magnthresh8) = 'bfm_ndmi_1_roc_magnthresh8'
+names(bfm_ndmi_1_roc_magnthresh9) = 'bfm_ndmi_1_roc_magnthresh9'
+names(bfm_ndmi_1_roc_magnthresh10) = 'bfm_ndmi_1_roc_magnthresh10'
+
+bfm_ndmi_1_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndmi_1_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndmi_1_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndmi_1_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndmi_1_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndmi_1_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndmi_1_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndmi_1_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndmi_1_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndmi_1_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh1)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh2)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh3)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh4)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh5)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh6)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh7)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh8)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh9)
+l2 = append(l2, bfm_ndmi_1_roc_magnthresh10)
+
+
+change = bfm_ndmi_2_all[[1]]
+magn = bfm_ndmi_2_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndmi_2_all_magnthresh1 = magn_bkp
+bfm_ndmi_2_all_magnthresh2 = magn_bkp
+bfm_ndmi_2_all_magnthresh3 = magn_bkp
+bfm_ndmi_2_all_magnthresh4 = magn_bkp
+bfm_ndmi_2_all_magnthresh5 = magn_bkp
+bfm_ndmi_2_all_magnthresh6 = magn_bkp
+bfm_ndmi_2_all_magnthresh7 = magn_bkp
+bfm_ndmi_2_all_magnthresh8 = magn_bkp
+bfm_ndmi_2_all_magnthresh9 = magn_bkp
+bfm_ndmi_2_all_magnthresh10 = magn_bkp
+
+names(bfm_ndmi_2_all_magnthresh1) = 'bfm_ndmi_2_all_magnthresh1'
+names(bfm_ndmi_2_all_magnthresh2) = 'bfm_ndmi_2_all_magnthresh2'
+names(bfm_ndmi_2_all_magnthresh3) = 'bfm_ndmi_2_all_magnthresh3'
+names(bfm_ndmi_2_all_magnthresh4) = 'bfm_ndmi_2_all_magnthresh4'
+names(bfm_ndmi_2_all_magnthresh5) = 'bfm_ndmi_2_all_magnthresh5'
+names(bfm_ndmi_2_all_magnthresh6) = 'bfm_ndmi_2_all_magnthresh6'
+names(bfm_ndmi_2_all_magnthresh7) = 'bfm_ndmi_2_all_magnthresh7'
+names(bfm_ndmi_2_all_magnthresh8) = 'bfm_ndmi_2_all_magnthresh8'
+names(bfm_ndmi_2_all_magnthresh9) = 'bfm_ndmi_2_all_magnthresh9'
+names(bfm_ndmi_2_all_magnthresh10) = 'bfm_ndmi_2_all_magnthresh10'
+
+bfm_ndmi_2_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndmi_2_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndmi_2_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndmi_2_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndmi_2_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndmi_2_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndmi_2_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndmi_2_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndmi_2_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndmi_2_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l2 = append(l2, bfm_ndmi_2_all_magnthresh1)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh2)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh3)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh4)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh5)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh6)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh7)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh8)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh9)
+l2 = append(l2, bfm_ndmi_2_all_magnthresh10)
+
+
+change = bfm_ndmi_2_roc[[1]]
+magn = bfm_ndmi_2_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndmi_2_roc_magnthresh1 = magn_bkp
+bfm_ndmi_2_roc_magnthresh2 = magn_bkp
+bfm_ndmi_2_roc_magnthresh3 = magn_bkp
+bfm_ndmi_2_roc_magnthresh4 = magn_bkp
+bfm_ndmi_2_roc_magnthresh5 = magn_bkp
+bfm_ndmi_2_roc_magnthresh6 = magn_bkp
+bfm_ndmi_2_roc_magnthresh7 = magn_bkp
+bfm_ndmi_2_roc_magnthresh8 = magn_bkp
+bfm_ndmi_2_roc_magnthresh9 = magn_bkp
+bfm_ndmi_2_roc_magnthresh10 = magn_bkp
+
+names(bfm_ndmi_2_roc_magnthresh1) = 'bfm_ndmi_2_roc_magnthresh1'
+names(bfm_ndmi_2_roc_magnthresh2) = 'bfm_ndmi_2_roc_magnthresh2'
+names(bfm_ndmi_2_roc_magnthresh3) = 'bfm_ndmi_2_roc_magnthresh3'
+names(bfm_ndmi_2_roc_magnthresh4) = 'bfm_ndmi_2_roc_magnthresh4'
+names(bfm_ndmi_2_roc_magnthresh5) = 'bfm_ndmi_2_roc_magnthresh5'
+names(bfm_ndmi_2_roc_magnthresh6) = 'bfm_ndmi_2_roc_magnthresh6'
+names(bfm_ndmi_2_roc_magnthresh7) = 'bfm_ndmi_2_roc_magnthresh7'
+names(bfm_ndmi_2_roc_magnthresh8) = 'bfm_ndmi_2_roc_magnthresh8'
+names(bfm_ndmi_2_roc_magnthresh9) = 'bfm_ndmi_2_roc_magnthresh9'
+names(bfm_ndmi_2_roc_magnthresh10) = 'bfm_ndmi_2_roc_magnthresh10'
+
+bfm_ndmi_2_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndmi_2_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndmi_2_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndmi_2_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndmi_2_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndmi_2_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndmi_2_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndmi_2_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndmi_2_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndmi_2_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh1)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh2)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh3)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh4)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh5)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh6)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh7)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh8)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh9)
+l2 = append(l2, bfm_ndmi_2_roc_magnthresh10)
+
+
+change = bfm_ndmi_3_all[[1]]
+magn = bfm_ndmi_3_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndmi_3_all_magnthresh1 = magn_bkp
+bfm_ndmi_3_all_magnthresh2 = magn_bkp
+bfm_ndmi_3_all_magnthresh3 = magn_bkp
+bfm_ndmi_3_all_magnthresh4 = magn_bkp
+bfm_ndmi_3_all_magnthresh5 = magn_bkp
+bfm_ndmi_3_all_magnthresh6 = magn_bkp
+bfm_ndmi_3_all_magnthresh7 = magn_bkp
+bfm_ndmi_3_all_magnthresh8 = magn_bkp
+bfm_ndmi_3_all_magnthresh9 = magn_bkp
+bfm_ndmi_3_all_magnthresh10 = magn_bkp
+
+names(bfm_ndmi_3_all_magnthresh1) = 'bfm_ndmi_3_all_magnthresh1'
+names(bfm_ndmi_3_all_magnthresh2) = 'bfm_ndmi_3_all_magnthresh2'
+names(bfm_ndmi_3_all_magnthresh3) = 'bfm_ndmi_3_all_magnthresh3'
+names(bfm_ndmi_3_all_magnthresh4) = 'bfm_ndmi_3_all_magnthresh4'
+names(bfm_ndmi_3_all_magnthresh5) = 'bfm_ndmi_3_all_magnthresh5'
+names(bfm_ndmi_3_all_magnthresh6) = 'bfm_ndmi_3_all_magnthresh6'
+names(bfm_ndmi_3_all_magnthresh7) = 'bfm_ndmi_3_all_magnthresh7'
+names(bfm_ndmi_3_all_magnthresh8) = 'bfm_ndmi_3_all_magnthresh8'
+names(bfm_ndmi_3_all_magnthresh9) = 'bfm_ndmi_3_all_magnthresh9'
+names(bfm_ndmi_3_all_magnthresh10) = 'bfm_ndmi_3_all_magnthresh10'
+
+bfm_ndmi_3_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndmi_3_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndmi_3_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndmi_3_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndmi_3_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndmi_3_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndmi_3_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndmi_3_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndmi_3_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndmi_3_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l2 = append(l2, bfm_ndmi_3_all_magnthresh1)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh2)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh3)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh4)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh5)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh6)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh7)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh8)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh9)
+l2 = append(l2, bfm_ndmi_3_all_magnthresh10)
+
+
+change = bfm_ndmi_3_roc[[1]]
+magn = bfm_ndmi_3_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_ndmi_3_roc_magnthresh1 = magn_bkp
+bfm_ndmi_3_roc_magnthresh2 = magn_bkp
+bfm_ndmi_3_roc_magnthresh3 = magn_bkp
+bfm_ndmi_3_roc_magnthresh4 = magn_bkp
+bfm_ndmi_3_roc_magnthresh5 = magn_bkp
+bfm_ndmi_3_roc_magnthresh6 = magn_bkp
+bfm_ndmi_3_roc_magnthresh7 = magn_bkp
+bfm_ndmi_3_roc_magnthresh8 = magn_bkp
+bfm_ndmi_3_roc_magnthresh9 = magn_bkp
+bfm_ndmi_3_roc_magnthresh10 = magn_bkp
+
+names(bfm_ndmi_3_roc_magnthresh1) = 'bfm_ndmi_3_roc_magnthresh1'
+names(bfm_ndmi_3_roc_magnthresh2) = 'bfm_ndmi_3_roc_magnthresh2'
+names(bfm_ndmi_3_roc_magnthresh3) = 'bfm_ndmi_3_roc_magnthresh3'
+names(bfm_ndmi_3_roc_magnthresh4) = 'bfm_ndmi_3_roc_magnthresh4'
+names(bfm_ndmi_3_roc_magnthresh5) = 'bfm_ndmi_3_roc_magnthresh5'
+names(bfm_ndmi_3_roc_magnthresh6) = 'bfm_ndmi_3_roc_magnthresh6'
+names(bfm_ndmi_3_roc_magnthresh7) = 'bfm_ndmi_3_roc_magnthresh7'
+names(bfm_ndmi_3_roc_magnthresh8) = 'bfm_ndmi_3_roc_magnthresh8'
+names(bfm_ndmi_3_roc_magnthresh9) = 'bfm_ndmi_3_roc_magnthresh9'
+names(bfm_ndmi_3_roc_magnthresh10) = 'bfm_ndmi_3_roc_magnthresh10'
+
+bfm_ndmi_3_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_ndmi_3_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_ndmi_3_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_ndmi_3_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_ndmi_3_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_ndmi_3_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_ndmi_3_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_ndmi_3_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_ndmi_3_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_ndmi_3_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh1)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh2)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh3)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh4)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh5)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh6)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh7)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh8)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh9)
+l2 = append(l2, bfm_ndmi_3_roc_magnthresh10)
+
+
+
+###Derive overlap, make plots and CSVs
+
+for (map in l2)
+{
+  #bfm change raster
+  x = map
+  require(rgdal) & require(rgeos)
+
+  #laverdi change raster
+  y = raster('./data/laverdi_test_forest.tif')
+
+  #derive overlap
+  overlap = mask(crop(x, y), y)
+  mypath <- paste(".data/landsat/NDMI_test/plots/", names(x), ".png", sep = "")
+  png(file = mypath)
+  title = names(x)
+  plot(x, main = title, legend = FALSE)
+  plot(y, add=TRUE, col='red', legend = FALSE)
+  plot(overlap, add=TRUE, col='blue', lwd=2, legend = FALSE)
+  dev.off()
+
+  #export change map as tiff
+  mappath = paste(".data/landsat/NDMI_test/maps/", names(x), ".png", sep = "")
+  writeRaster(overlap, mappath, format = "GTiff")
+
+  #calculate number of overlapping cells
+  overlap[!is.na(overlap)]<-1
+  f= data.frame(freq(overlap))
+  ol = rbind(ol, f)
+
+  #calculate percentage of overlap wrt total bfm change
+  x[!is.na(x)]<-1
+  g=freq(x)
+  h=data.frame(f[1,2]/g[1,2]*100)
+  perc = rbind(perc, h)
+
+  #calculate percentage of overlap wrt total laverdi change
+  y[!is.na(y)]<-1
+  i=freq(y)
+  j=data.frame(f[1,2]/i[1,2]*100)
+  perc_l = rbind(perc_l, j)
+}
+
+write.csv(ol,".data/landsat/NDMI_test/plots/overlap.csv")
+write.csv(perc,".data/landsat/NDMI_test/plots/perc_overlap.csv")
+write.csv(perc_l,".data/landsat/NDMI_test/plots/perc_overlap_laverdi.csv")
+```
+
+###03_savi
+
+```{r}
+###intersect extent and generate rasterbricks
+
+setwd('.data/landsat/SAVI_test')
+
+#generate original file list
+fl = list.files()
+
+#generate empty list to store new file names
+your_length <- 0
+fl2 <- rep(NA, your_length)
+
+#generate new file names and append them to fl2
+for (file in fl){
+  d <- file
+  n = paste0(substr(d, 0, 2), substr(d, 4, 4), substr(d, 6, 11), substr(d, 13, 16))
+  date = paste0(substr(d, 13, 16), sep = "/", substr(d, 17, 18), sep = "/", substr(d, 19, 20))
+  name = paste0(n, date.to.DOY(date=date, format = "yyyy/mm/dd"),substr(d, 21, 24))
+  if (nchar(name) < 19) {name = paste0(substr(name, 1, 13), sep = "00", substr(name, 14, 18))}
+  else if (nchar(name) < 20) {name = paste0(substr(name, 1, 13), sep = "0", substr(name, 14, 19))}
+  fl2 <- c(fl2, name)
+}
+
+#rename files
+file.rename(fl, fl2)
+
+ext <- intersectExtent(lapply(fl2, brick)) # calculate tile's intersect extent
+
+for (i in 1:length(fl2)){
+  r <- crop(raster(fl2[i]), ext) # create extent image
+  writeRaster(r, filename = paste0(fl2[i], '_ext'), format = "GTiff", dataype = "INT32", overwrite = T) # output
+}
+
+print('creating raster brick for SAVI')
+savi = brick(mclapply(fl,raster))#createbrick
+# assign NA value
+savi[savi == 0] <- NA
+
+
+
+###RUN BFM
+
+print('running bfms for SAVI')
+bfm_savi_1_all = bfmSpatial(savi, start=c(2018,60), order=1, history = c("all"), mc.cores = 32)
+bfm_savi_1_roc = bfmSpatial(savi, start=c(2018,60), order=1, history = c("ROC"), mc.cores = 32)
+bfm_savi_2_all = bfmSpatial(savi, start=c(2018,60), order=2, history = c("all"), mc.cores = 32)
+bfm_savi_2_roc = bfmSpatial(savi, start=c(2018,60), order=2, history = c("ROC"), mc.cores = 32)
+bfm_savi_3_all = bfmSpatial(savi, start=c(2018,60), order=3, history = c("all"), mc.cores = 32)
+bfm_savi_3_roc = bfmSpatial(savi, start=c(2018,60), order=3, history = c("ROC"), mc.cores = 32)
+
+
+
+###APPLY CHANGE THRESHOLDS
+
+#make empty map list
+l5 = c()
+
+#make empty dataframes for overlap and perc_overlap
+mat = matrix(ncol = 2, nrow = 0)
+ol <- data.frame(mat)
+perc <- data.frame(mat)
+perc_l <- data.frame(mat)
+
+print('creating change maps for SAVI')
+
+change = bfm_savi_1_all[[1]]
+magn = bfm_savi_1_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_savi_1_all_magnthresh1 = magn_bkp
+bfm_savi_1_all_magnthresh2 = magn_bkp
+bfm_savi_1_all_magnthresh3 = magn_bkp
+bfm_savi_1_all_magnthresh4 = magn_bkp
+bfm_savi_1_all_magnthresh5 = magn_bkp
+bfm_savi_1_all_magnthresh6 = magn_bkp
+bfm_savi_1_all_magnthresh7 = magn_bkp
+bfm_savi_1_all_magnthresh8 = magn_bkp
+bfm_savi_1_all_magnthresh9 = magn_bkp
+bfm_savi_1_all_magnthresh10 = magn_bkp
+
+names(bfm_savi_1_all_magnthresh1) = 'bfm_savi_1_all_magnthresh1'
+names(bfm_savi_1_all_magnthresh2) = 'bfm_savi_1_all_magnthresh2'
+names(bfm_savi_1_all_magnthresh3) = 'bfm_savi_1_all_magnthresh3'
+names(bfm_savi_1_all_magnthresh4) = 'bfm_savi_1_all_magnthresh4'
+names(bfm_savi_1_all_magnthresh5) = 'bfm_savi_1_all_magnthresh5'
+names(bfm_savi_1_all_magnthresh6) = 'bfm_savi_1_all_magnthresh6'
+names(bfm_savi_1_all_magnthresh7) = 'bfm_savi_1_all_magnthresh7'
+names(bfm_savi_1_all_magnthresh8) = 'bfm_savi_1_all_magnthresh8'
+names(bfm_savi_1_all_magnthresh9) = 'bfm_savi_1_all_magnthresh9'
+names(bfm_savi_1_all_magnthresh10) = 'bfm_savi_1_all_magnthresh10'
+
+bfm_savi_1_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_savi_1_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_savi_1_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_savi_1_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_savi_1_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_savi_1_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_savi_1_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_savi_1_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_savi_1_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_savi_1_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l5 = append(l5, bfm_savi_1_all_magnthresh1)
+l5 = append(l5, bfm_savi_1_all_magnthresh2)
+l5 = append(l5, bfm_savi_1_all_magnthresh3)
+l5 = append(l5, bfm_savi_1_all_magnthresh4)
+l5 = append(l5, bfm_savi_1_all_magnthresh5)
+l5 = append(l5, bfm_savi_1_all_magnthresh6)
+l5 = append(l5, bfm_savi_1_all_magnthresh7)
+l5 = append(l5, bfm_savi_1_all_magnthresh8)
+l5 = append(l5, bfm_savi_1_all_magnthresh9)
+l5 = append(l5, bfm_savi_1_all_magnthresh10)
+
+
+change = bfm_savi_1_roc[[1]]
+magn = bfm_savi_1_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_savi_1_roc_magnthresh1 = magn_bkp
+bfm_savi_1_roc_magnthresh2 = magn_bkp
+bfm_savi_1_roc_magnthresh3 = magn_bkp
+bfm_savi_1_roc_magnthresh4 = magn_bkp
+bfm_savi_1_roc_magnthresh5 = magn_bkp
+bfm_savi_1_roc_magnthresh6 = magn_bkp
+bfm_savi_1_roc_magnthresh7 = magn_bkp
+bfm_savi_1_roc_magnthresh8 = magn_bkp
+bfm_savi_1_roc_magnthresh9 = magn_bkp
+bfm_savi_1_roc_magnthresh10 = magn_bkp
+
+names(bfm_savi_1_roc_magnthresh1) = 'bfm_savi_1_roc_magnthresh1'
+names(bfm_savi_1_roc_magnthresh2) = 'bfm_savi_1_roc_magnthresh2'
+names(bfm_savi_1_roc_magnthresh3) = 'bfm_savi_1_roc_magnthresh3'
+names(bfm_savi_1_roc_magnthresh4) = 'bfm_savi_1_roc_magnthresh4'
+names(bfm_savi_1_roc_magnthresh5) = 'bfm_savi_1_roc_magnthresh5'
+names(bfm_savi_1_roc_magnthresh6) = 'bfm_savi_1_roc_magnthresh6'
+names(bfm_savi_1_roc_magnthresh7) = 'bfm_savi_1_roc_magnthresh7'
+names(bfm_savi_1_roc_magnthresh8) = 'bfm_savi_1_roc_magnthresh8'
+names(bfm_savi_1_roc_magnthresh9) = 'bfm_savi_1_roc_magnthresh9'
+names(bfm_savi_1_roc_magnthresh10) = 'bfm_savi_1_roc_magnthresh10'
+
+bfm_savi_1_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_savi_1_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_savi_1_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_savi_1_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_savi_1_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_savi_1_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_savi_1_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_savi_1_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_savi_1_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_savi_1_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l5 = append(l5, bfm_savi_1_roc_magnthresh1)
+l5 = append(l5, bfm_savi_1_roc_magnthresh2)
+l5 = append(l5, bfm_savi_1_roc_magnthresh3)
+l5 = append(l5, bfm_savi_1_roc_magnthresh4)
+l5 = append(l5, bfm_savi_1_roc_magnthresh5)
+l5 = append(l5, bfm_savi_1_roc_magnthresh6)
+l5 = append(l5, bfm_savi_1_roc_magnthresh7)
+l5 = append(l5, bfm_savi_1_roc_magnthresh8)
+l5 = append(l5, bfm_savi_1_roc_magnthresh9)
+l5 = append(l5, bfm_savi_1_roc_magnthresh10)
+
+
+change = bfm_savi_2_all[[1]]
+magn = bfm_savi_2_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_savi_2_all_magnthresh1 = magn_bkp
+bfm_savi_2_all_magnthresh2 = magn_bkp
+bfm_savi_2_all_magnthresh3 = magn_bkp
+bfm_savi_2_all_magnthresh4 = magn_bkp
+bfm_savi_2_all_magnthresh5 = magn_bkp
+bfm_savi_2_all_magnthresh6 = magn_bkp
+bfm_savi_2_all_magnthresh7 = magn_bkp
+bfm_savi_2_all_magnthresh8 = magn_bkp
+bfm_savi_2_all_magnthresh9 = magn_bkp
+bfm_savi_2_all_magnthresh10 = magn_bkp
+
+names(bfm_savi_2_all_magnthresh1) = 'bfm_savi_2_all_magnthresh1'
+names(bfm_savi_2_all_magnthresh2) = 'bfm_savi_2_all_magnthresh2'
+names(bfm_savi_2_all_magnthresh3) = 'bfm_savi_2_all_magnthresh3'
+names(bfm_savi_2_all_magnthresh4) = 'bfm_savi_2_all_magnthresh4'
+names(bfm_savi_2_all_magnthresh5) = 'bfm_savi_2_all_magnthresh5'
+names(bfm_savi_2_all_magnthresh6) = 'bfm_savi_2_all_magnthresh6'
+names(bfm_savi_2_all_magnthresh7) = 'bfm_savi_2_all_magnthresh7'
+names(bfm_savi_2_all_magnthresh8) = 'bfm_savi_2_all_magnthresh8'
+names(bfm_savi_2_all_magnthresh9) = 'bfm_savi_2_all_magnthresh9'
+names(bfm_savi_2_all_magnthresh10) = 'bfm_savi_2_all_magnthresh10'
+
+bfm_savi_2_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_savi_2_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_savi_2_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_savi_2_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_savi_2_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_savi_2_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_savi_2_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_savi_2_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_savi_2_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_savi_2_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l5 = append(l5, bfm_savi_2_all_magnthresh1)
+l5 = append(l5, bfm_savi_2_all_magnthresh2)
+l5 = append(l5, bfm_savi_2_all_magnthresh3)
+l5 = append(l5, bfm_savi_2_all_magnthresh4)
+l5 = append(l5, bfm_savi_2_all_magnthresh5)
+l5 = append(l5, bfm_savi_2_all_magnthresh6)
+l5 = append(l5, bfm_savi_2_all_magnthresh7)
+l5 = append(l5, bfm_savi_2_all_magnthresh8)
+l5 = append(l5, bfm_savi_2_all_magnthresh9)
+l5 = append(l5, bfm_savi_2_all_magnthresh10)
+
+
+change = bfm_savi_2_roc[[1]]
+magn = bfm_savi_2_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_savi_2_roc_magnthresh1 = magn_bkp
+bfm_savi_2_roc_magnthresh2 = magn_bkp
+bfm_savi_2_roc_magnthresh3 = magn_bkp
+bfm_savi_2_roc_magnthresh4 = magn_bkp
+bfm_savi_2_roc_magnthresh5 = magn_bkp
+bfm_savi_2_roc_magnthresh6 = magn_bkp
+bfm_savi_2_roc_magnthresh7 = magn_bkp
+bfm_savi_2_roc_magnthresh8 = magn_bkp
+bfm_savi_2_roc_magnthresh9 = magn_bkp
+bfm_savi_2_roc_magnthresh10 = magn_bkp
+
+names(bfm_savi_2_roc_magnthresh1) = 'bfm_savi_2_roc_magnthresh1'
+names(bfm_savi_2_roc_magnthresh2) = 'bfm_savi_2_roc_magnthresh2'
+names(bfm_savi_2_roc_magnthresh3) = 'bfm_savi_2_roc_magnthresh3'
+names(bfm_savi_2_roc_magnthresh4) = 'bfm_savi_2_roc_magnthresh4'
+names(bfm_savi_2_roc_magnthresh5) = 'bfm_savi_2_roc_magnthresh5'
+names(bfm_savi_2_roc_magnthresh6) = 'bfm_savi_2_roc_magnthresh6'
+names(bfm_savi_2_roc_magnthresh7) = 'bfm_savi_2_roc_magnthresh7'
+names(bfm_savi_2_roc_magnthresh8) = 'bfm_savi_2_roc_magnthresh8'
+names(bfm_savi_2_roc_magnthresh9) = 'bfm_savi_2_roc_magnthresh9'
+names(bfm_savi_2_roc_magnthresh10) = 'bfm_savi_2_roc_magnthresh10'
+
+bfm_savi_2_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_savi_2_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_savi_2_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_savi_2_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_savi_2_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_savi_2_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_savi_2_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_savi_2_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_savi_2_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_savi_2_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l5 = append(l5, bfm_savi_2_roc_magnthresh1)
+l5 = append(l5, bfm_savi_2_roc_magnthresh2)
+l5 = append(l5, bfm_savi_2_roc_magnthresh3)
+l5 = append(l5, bfm_savi_2_roc_magnthresh4)
+l5 = append(l5, bfm_savi_2_roc_magnthresh5)
+l5 = append(l5, bfm_savi_2_roc_magnthresh6)
+l5 = append(l5, bfm_savi_2_roc_magnthresh7)
+l5 = append(l5, bfm_savi_2_roc_magnthresh8)
+l5 = append(l5, bfm_savi_2_roc_magnthresh9)
+l5 = append(l5, bfm_savi_2_roc_magnthresh10)
+
+
+change = bfm_savi_3_all[[1]]
+magn = bfm_savi_3_all[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_savi_3_all_magnthresh1 = magn_bkp
+bfm_savi_3_all_magnthresh2 = magn_bkp
+bfm_savi_3_all_magnthresh3 = magn_bkp
+bfm_savi_3_all_magnthresh4 = magn_bkp
+bfm_savi_3_all_magnthresh5 = magn_bkp
+bfm_savi_3_all_magnthresh6 = magn_bkp
+bfm_savi_3_all_magnthresh7 = magn_bkp
+bfm_savi_3_all_magnthresh8 = magn_bkp
+bfm_savi_3_all_magnthresh9 = magn_bkp
+bfm_savi_3_all_magnthresh10 = magn_bkp
+
+names(bfm_savi_3_all_magnthresh1) = 'bfm_savi_3_all_magnthresh1'
+names(bfm_savi_3_all_magnthresh2) = 'bfm_savi_3_all_magnthresh2'
+names(bfm_savi_3_all_magnthresh3) = 'bfm_savi_3_all_magnthresh3'
+names(bfm_savi_3_all_magnthresh4) = 'bfm_savi_3_all_magnthresh4'
+names(bfm_savi_3_all_magnthresh5) = 'bfm_savi_3_all_magnthresh5'
+names(bfm_savi_3_all_magnthresh6) = 'bfm_savi_3_all_magnthresh6'
+names(bfm_savi_3_all_magnthresh7) = 'bfm_savi_3_all_magnthresh7'
+names(bfm_savi_3_all_magnthresh8) = 'bfm_savi_3_all_magnthresh8'
+names(bfm_savi_3_all_magnthresh9) = 'bfm_savi_3_all_magnthresh9'
+names(bfm_savi_3_all_magnthresh10) = 'bfm_savi_3_all_magnthresh10'
+
+bfm_savi_3_all_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_savi_3_all_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_savi_3_all_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_savi_3_all_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_savi_3_all_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_savi_3_all_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_savi_3_all_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_savi_3_all_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_savi_3_all_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_savi_3_all_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l5 = append(l5, bfm_savi_3_all_magnthresh1)
+l5 = append(l5, bfm_savi_3_all_magnthresh2)
+l5 = append(l5, bfm_savi_3_all_magnthresh3)
+l5 = append(l5, bfm_savi_3_all_magnthresh4)
+l5 = append(l5, bfm_savi_3_all_magnthresh5)
+l5 = append(l5, bfm_savi_3_all_magnthresh6)
+l5 = append(l5, bfm_savi_3_all_magnthresh7)
+l5 = append(l5, bfm_savi_3_all_magnthresh8)
+l5 = append(l5, bfm_savi_3_all_magnthresh9)
+l5 = append(l5, bfm_savi_3_all_magnthresh10)
+
+
+change = bfm_savi_3_roc[[1]]
+magn = bfm_savi_3_roc[[2]]/10000
+magn_bkp = magn
+magn_bkp[is.na(change)] = NA
+bfm_savi_3_roc_magnthresh1 = magn_bkp
+bfm_savi_3_roc_magnthresh2 = magn_bkp
+bfm_savi_3_roc_magnthresh3 = magn_bkp
+bfm_savi_3_roc_magnthresh4 = magn_bkp
+bfm_savi_3_roc_magnthresh5 = magn_bkp
+bfm_savi_3_roc_magnthresh6 = magn_bkp
+bfm_savi_3_roc_magnthresh7 = magn_bkp
+bfm_savi_3_roc_magnthresh8 = magn_bkp
+bfm_savi_3_roc_magnthresh9 = magn_bkp
+bfm_savi_3_roc_magnthresh10 = magn_bkp
+
+names(bfm_savi_3_roc_magnthresh1) = 'bfm_savi_3_roc_magnthresh1'
+names(bfm_savi_3_roc_magnthresh2) = 'bfm_savi_3_roc_magnthresh2'
+names(bfm_savi_3_roc_magnthresh3) = 'bfm_savi_3_roc_magnthresh3'
+names(bfm_savi_3_roc_magnthresh4) = 'bfm_savi_3_roc_magnthresh4'
+names(bfm_savi_3_roc_magnthresh5) = 'bfm_savi_3_roc_magnthresh5'
+names(bfm_savi_3_roc_magnthresh6) = 'bfm_savi_3_roc_magnthresh6'
+names(bfm_savi_3_roc_magnthresh7) = 'bfm_savi_3_roc_magnthresh7'
+names(bfm_savi_3_roc_magnthresh8) = 'bfm_savi_3_roc_magnthresh8'
+names(bfm_savi_3_roc_magnthresh9) = 'bfm_savi_3_roc_magnthresh9'
+names(bfm_savi_3_roc_magnthresh10) = 'bfm_savi_3_roc_magnthresh10'
+
+bfm_savi_3_roc_magnthresh1[(magn_bkp>-0.01) & (magn_bkp<0.01)] = NA
+bfm_savi_3_roc_magnthresh2[(magn_bkp>-0.02) & (magn_bkp<0.02)] = NA
+bfm_savi_3_roc_magnthresh3[(magn_bkp>-0.03) & (magn_bkp<0.03)] = NA
+bfm_savi_3_roc_magnthresh4[(magn_bkp>-0.04) & (magn_bkp<0.04)] = NA
+bfm_savi_3_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+bfm_savi_3_roc_magnthresh6[(magn_bkp>-0.06) & (magn_bkp<0.06)] = NA
+bfm_savi_3_roc_magnthresh7[(magn_bkp>-0.07) & (magn_bkp<0.07)] = NA
+bfm_savi_3_roc_magnthresh8[(magn_bkp>-0.08) & (magn_bkp<0.08)] = NA
+bfm_savi_3_roc_magnthresh9[(magn_bkp>-0.09) & (magn_bkp<0.09)] = NA
+bfm_savi_3_roc_magnthresh10[(magn_bkp>-0.1) & (magn_bkp<0.1)] = NA
+
+l5 = append(l5, bfm_savi_3_roc_magnthresh1)
+l5 = append(l5, bfm_savi_3_roc_magnthresh2)
+l5 = append(l5, bfm_savi_3_roc_magnthresh3)
+l5 = append(l5, bfm_savi_3_roc_magnthresh4)
+l5 = append(l5, bfm_savi_3_roc_magnthresh5)
+l5 = append(l5, bfm_savi_3_roc_magnthresh6)
+l5 = append(l5, bfm_savi_3_roc_magnthresh7)
+l5 = append(l5, bfm_savi_3_roc_magnthresh8)
+l5 = append(l5, bfm_savi_3_roc_magnthresh9)
+l5 = append(l5, bfm_savi_3_roc_magnthresh10)
+
+
+
+###Derive overlap, make plots and CSVs
+
+for (map in l5)
+{
+  #bfm change raster
+  x = map
+  require(rgdal) & require(rgeos)
+
+  #laverdi change raster
+  y = raster('./data/laverdi_test_cropland.tif')
+
+  #derive overlap
+  overlap = mask(crop(x, y), y)
+  mypath <- paste(".data/landsat/SAVI_test/plots/", names(x), ".png", sep = "")
+  png(file = mypath)
+  title = names(x)
+  plot(x, main = title, legend = FALSE)
+  plot(y, add=TRUE, col='red', legend = FALSE)
+  plot(overlap, add=TRUE, col='blue', lwd=2, legend = FALSE)
+  dev.off()
+
+  #export change map as tiff
+  mappath = paste(".data/landsat/SAVI_test/maps/", names(x), ".png", sep = "")
+  writeRaster(overlap, mappath, format = "GTiff")
+
+  #calculate number of overlapping cells
+  overlap[!is.na(overlap)]<-1
+  f= data.frame(freq(overlap))
+  ol = rbind(ol, f)
+
+  #calculate percentage of overlap wrt total bfm change
+  x[!is.na(x)]<-1
+  g=freq(x)
+  h=data.frame(f[1,2]/g[1,2]*100)
+  perc = rbind(perc, h)
+
+  #calculate percentage of overlap wrt total laverdi change
+  y[!is.na(y)]<-1
+  i=freq(y)
+  j=data.frame(f[1,2]/i[1,2]*100)
+  perc_l = rbind(perc_l, j)
+}
+
+write.csv(ol,".data/landsat/NDMI_test/plots/overlap.csv")
+write.csv(perc,".data/landsat/NDMI_test/plots/perc_overlap.csv")
+write.csv(perc_l,".data/landsat/NDMI_test/plots/perc_overlap_laverdi.csv")
+```

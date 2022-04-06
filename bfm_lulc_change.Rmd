@@ -1,0 +1,583 @@
+---
+title: "BFM_Analysis"
+author: "Veit Ulrich"
+date: "4/4/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(bfastSpatial)
+library(TDPanalysis)
+require(rgdal)
+require(rgeos)
+setwd('PATH TO REPOSITORY DIRECTORY') # set working directory
+tmp = './raster_temp' # directory to store raster brick files
+rasterOptions(tmpdir=tmp) # set temp dir
+source('./src/intersectExtent.R') # find common extent 
+source('./src/genTileUTM.R') # divide raster into tiles
+```
+
+# Detect LULC changes from cropland to urban
+
+```{r}
+#load OSMlanduse change raster
+cropland_to_urban = raster('./data/osmchange_cropland_to_urban.tif')
+
+#define folder with Landsat SAVI tiles and list subfolders
+parent.folder <- './data/landsat/SAVI'
+sub.folders <- list.dirs(parent.folder, recursive=TRUE)[-1]
+
+#iterate over the tile folders
+for (folder in sub.folders){ 
+  
+  #change working directory to the tile folder
+  setwd(folder)
+  
+  
+  ###intersect extent and generate rasterbrick###
+  
+  print(paste0('intersecting image extents for savi tile', basename(folder)))
+  
+  fl <- list.files(pattern = "\\.tif$") # tile's raster list
+  
+  ext <- intersectExtent(lapply(fl, brick)) # calculate tile's intersect extent
+  
+  for (i in 1:length(fl)){
+    rast <- crop(raster(fl[i]), ext) # create extent image
+    writeRaster(rast, paste0(names(rast), '_ext.tif'), format = "GTiff", dataype = "INT32", overwrite = T) # output 
+  }
+  
+  fl <- list.files(pattern = "\\_ext.tif$") # tile's raster list
+  
+  #cut tile into smaller tiles using subsetUTM function (from genTileUTM.R)
+  for (i in 1:length(fl)){
+    x = raster(fl[i])
+    ce = subsetUTM(x, 1000)
+  }
+  
+  #make empty emission lists
+  c2u_emm1 = c()
+  c2u_emm2 = c()
+  c2u_emm3 = c()
+  
+  #iterate over the sub-tile folders
+  tile.folders <- list.dirs(folder, recursive=TRUE)[-1]
+  
+  for (tilefolder in tile.folders){
+    
+    #change working directory to the tile folder
+    setwd(tilefolder)
+  
+    fl <- list.files(pattern = "\\_ext.tif$") # tile's raster list
+    
+    #crop OSMlanduse change raster
+    tileext <- intersectExtent(lapply(fl, brick)) # calculate subtile's intersect extent
+    cropland_to_urban_tile <- crop(cropland_to_urban, tileext) # create extent image
+    
+    #generate empty list to store new file names
+    your_length <- 0
+    fl2 <- rep(NA, your_length)
+    fl3 <- rep(NA, your_length)
+    
+    #generate new file names and append them to fl2
+    for (file in fl){
+      d <- file
+      n = paste0(substr(d, 0, 2), substr(d, 4, 4), substr(d, 6, 11), substr(d, 13, 16))
+      date = paste0(substr(d, 13, 16), sep = "/", substr(d, 17, 18), sep = "/", substr(d, 19, 20))
+      name = paste0(n, date.to.DOY(date=date, format = "yyyy/mm/dd"),substr(d, 25, 28))
+      if (nchar(name) < 19) {name = paste0(substr(name, 1, 13), sep = "00", substr(name, 14, 18))}
+      else if (nchar(name) < 20) {name = paste0(substr(name, 1, 13), sep = "0", substr(name, 14, 19))}
+      fl2 <- c(fl2, name)
+    }
+    
+    #rename files
+    file.rename(fl, fl2)
+    
+    print(paste0('creating raster brick for savi tile', basename(tilefolder)))
+    savi = brick(lapply(fl2, raster))#createbrick
+    
+    # assign NA value
+    savi[savi == 0] <- NA
+    
+    # reassign layer names to raster brick layers
+    for (file in fl2){
+      name = substr(file, 0, 16)
+      fl3 <- c(fl3, name)
+    }
+    
+    names(savi) <- fl3
+    
+    
+    ###Run BFM###
+    print(paste0('running bfm for savi tile', basename(tilefolder)))
+    #start of monitoring period: 2018, day 60
+    bfm_savi_3_roc = bfmSpatial(savi, start=c(2018,60), order=3, history = c("ROC"), mc.cores = 16)
+    
+    ###APPLY CHANGE THRESHOLDS###
+    
+    print(paste0('creating change map for savi tile', basename(tilefolder)))
+    
+    change = bfm_savi_3_roc[[1]]
+    magn = bfm_savi_3_roc[[2]]/10000
+    magn_bkp = magn
+    magn_bkp[is.na(change)] = NA
+    bfm_savi_3_roc_magnthresh5 = magn_bkp
+    
+    names(bfm_savi_3_roc_magnthresh5) = 'bfm_savi_3_roc_magnthresh5'
+    
+    bfm_savi_3_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+    
+    
+    ###Derive overlap, make plots and CSVs###
+    
+    print(paste0('deriving overlap, making plots and CSV for savi tile', basename(tilefolder)))
+    
+    #bfm change raster
+    x = bfm_savi_3_roc_magnthresh5
+
+    #OSMlanduse change raster
+    y = cropland_to_urban_tile
+
+    #derive overlap pasture_to_urban
+    overlap_y = mask(crop(x, y), y)
+
+    #export change maps as tiff
+    mappath_y = paste(names(x), "_to_urban", ".png", sep = "")
+    writeRaster(overlap_y, mappath_y, format = "GTiff", overwrite = T)
+    
+    #calculate number of overlapping cells
+    overlap_y[!is.na(overlap_y)]<-1
+    fy= data.frame(freq(overlap_y))
+    
+    #calculate absolute emissions
+    cropland_to_urban_emissions1 = fy[1,2] * 0.09 * 1
+    cropland_to_urban_emissions2 = fy[1,2] * 0.09 * 35
+    cropland_to_urban_emissions3 = fy[1,2] * 0.09 * 61
+    
+    #append absolute emission values to emission lists
+    c2u_emm1 = append(c2u_emm1, cropland_to_urban_emissions1)
+    c2u_emm2 = append(c2u_emm2, cropland_to_urban_emissions2)
+    c2u_emm3 = append(c2u_emm3, cropland_to_urban_emissions3)
+    
+    print(paste0("cropland_to_urban_emissions1 subtile ", basename(tilefolder), ": ", cropland_to_urban_emissions1))
+    print(paste0("cropland_to_urban_emissions2 subtile ", basename(tilefolder), ": ", cropland_to_urban_emissions2))
+    print(paste0("cropland_to_urban_emissions3 subtile ", basename(tilefolder), ": ", cropland_to_urban_emissions3))
+
+  }
+  
+  #remove all values 10000 and higher from emission lists (these are probably errors from empty tiles)
+  c2u_emm1 = c2u_emm1[c2u_emm1<10000]
+  c2u_emm2 = c2u_emm2[c2u_emm2<10000]
+  c2u_emm3 = c2u_emm3[c2u_emm3<10000]
+  
+  #print emission sums
+  print(paste0("cropland_to_urban_emissions1 tile ", basename(folder), ": ", sum(c2u_emm1)))
+  print(paste0("cropland_to_urban_emissions2 tile ", basename(folder), ": ", sum(c2u_emm2)))
+  print(paste0("cropland_to_urban_emissions3 tile ", basename(folder), ": ", sum(c2u_emm3)))
+}
+```
+
+# Detect LULC changes from pasture to urban and cropland
+
+```{r}
+#load OSMlanduse change rasters
+pasture_to_urban = raster('./data/osmchange_pasture_to_urban.tif')
+pasture_to_cropland = raster('./data/osmchange_pasture_to_cropland.tif')
+
+#define folder with Landsat NDVI tiles and list subfolders
+parent.folder <- './data/landsat/NDVI'
+sub.folders <- list.dirs(parent.folder, recursive=TRUE)[-1]
+
+#iterate over the tile folders
+for (folder in sub.folders){ 
+  
+  #change working directory to the tile folder
+  setwd(folder)
+  
+  
+  ###intersect extent and generate rasterbrick###
+  
+  print(paste0('intersecting image extents for ndvi tile', basename(folder)))
+  
+  fl <- list.files(pattern = "\\.tif$") # tile's raster list
+  
+  ext <- intersectExtent(lapply(fl, brick)) # calculate tile's intersect extent
+  
+  for (i in 1:length(fl)){
+    rast <- crop(raster(fl[i]), ext) # create extent image
+    writeRaster(rast, paste0(names(rast), '_ext.tif'), format = "GTiff", dataype = "INT32", overwrite = T) # output 
+  }
+  
+  fl <- list.files(pattern = "\\_ext.tif$") # tile's raster list
+  
+  #cut tile into smaller tiles using subsetUTM function (from genTileUTM.R)
+  for (i in 1:length(fl)){
+    x = raster(fl[i])
+    ce = subsetUTM(x, 1000)
+  }
+  
+  #make empty emission lists
+  p2u_emm1 = c()
+  p2u_emm2 = c()
+  p2u_emm3 = c()
+  p2c_emm1 = c()
+  p2c_emm2 = c()
+  p2c_emm3 = c()
+  
+  #iterate over the sub-tile folders
+  tile.folders <- list.dirs(folder, recursive=TRUE)[-1]
+  
+  for (tilefolder in tile.folders){
+    
+    #change working directory to the tile folder
+    setwd(tilefolder)
+  
+    fl <- list.files(pattern = "\\_ext.tif$") # tile's raster list
+    
+    #crop OSMlanduse change rasters
+    tileext <- intersectExtent(lapply(fl, brick)) # calculate subtile's intersect extent
+    pasture_to_urban_tile <- crop(pasture_to_urban, tileext) # create extent image
+    pasture_to_cropland_tile <- crop(pasture_to_cropland, tileext) # create extent image
+    
+    #generate empty list to store new file names
+    your_length <- 0
+    fl2 <- rep(NA, your_length)
+    fl3 <- rep(NA, your_length)
+    
+    #generate new file names and append them to fl2
+    for (file in fl){
+      d <- file
+      n = paste0(substr(d, 0, 2), substr(d, 4, 4), substr(d, 6, 11), substr(d, 13, 16))
+      date = paste0(substr(d, 13, 16), sep = "/", substr(d, 17, 18), sep = "/", substr(d, 19, 20))
+      name = paste0(n, date.to.DOY(date=date, format = "yyyy/mm/dd"),substr(d, 25, 28))
+      if (nchar(name) < 19) {name = paste0(substr(name, 1, 13), sep = "00", substr(name, 14, 18))}
+      else if (nchar(name) < 20) {name = paste0(substr(name, 1, 13), sep = "0", substr(name, 14, 19))}
+      fl2 <- c(fl2, name)
+    }
+    
+    #rename files
+    file.rename(fl, fl2)
+    
+    print(paste0('creating raster brick for ndvi tile', basename(tilefolder)))
+    ndvi = brick(lapply(fl2, raster))#createbrick
+    
+    # assign NA value
+    ndvi[ndvi == 0] <- NA
+    
+    # reassign layer names to raster brick layers
+    for (file in fl2){
+      name = substr(file, 0, 16)
+      fl3 <- c(fl3, name)
+    }
+    
+    names(ndvi) <- fl3
+  
+    
+    ###Run BFM###
+    print(paste0('running bfm for ndvi tile', basename(tilefolder)))
+    #start of monitoring period: 2018, day 60
+    bfm_ndvi_2_roc = bfmSpatial(ndvi, start=c(2018,60), order=2, history = c("ROC"), mc.cores = 16)
+    
+    ###APPLY CHANGE THRESHOLDS###
+    
+    print(paste0('creating change map for ndvi tile', basename(tilefolder)))
+    
+    change = bfm_ndvi_2_roc[[1]]
+    magn = bfm_ndvi_2_roc[[2]]/10000
+    magn_bkp = magn
+    magn_bkp[is.na(change)] = NA
+    bfm_ndvi_2_roc_magnthresh5 = magn_bkp
+    
+    names(bfm_ndvi_2_roc_magnthresh5) = 'bfm_ndvi_2_roc_magnthresh5'
+    
+    bfm_ndvi_2_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+    
+    
+    ###Derive overlap, make plots and CSVs###
+    
+    print(paste0('deriving overlap, making plots and CSV for ndvi tile', basename(tilefolder)))
+
+    #bfm change raster
+    x = bfm_ndvi_2_roc_magnthresh5
+
+    #OSMlanduse change raster
+    y = pasture_to_urban_tile
+    z = pasture_to_cropland_tile
+
+    #derive overlap pasture_to_urban
+    overlap_y = mask(crop(x, y), y)
+    overlap_z = mask(crop(x, z), z)
+
+    #export change maps as tiff
+    mappath_y = paste(names(x), "_to_urban", ".png", sep = "")
+    writeRaster(overlap_y, mappath_y, format = "GTiff", overwrite = T)
+    mappath_z = paste(names(x), "_to_cropland", ".png", sep = "")
+    writeRaster(overlap_z, mappath_z, format = "GTiff", overwrite = T)
+    
+    #calculate number of overlapping cells
+    overlap_y[!is.na(overlap_y)]<-1
+    overlap_z[!is.na(overlap_z)]<-1
+    fy= data.frame(freq(overlap_y))
+    fz= data.frame(freq(overlap_z))
+    
+    #calculate absolute emissions
+    pasture_to_urban_emissions1 = fy[1,2] * 0.09 * 36.5
+    pasture_to_urban_emissions2 = fy[1,2] * 0.09 * 36.5
+    pasture_to_urban_emissions3 = fy[1,2] * 0.09 * 96.5
+    
+    pasture_to_cropland_emissions1 = fz[1,2] * 0.09 * 35.5
+    pasture_to_cropland_emissions2 = fz[1,2] * 0.09 * 1.5
+    pasture_to_cropland_emissions3 = fz[1,2] * 0.09 * 35.5
+    
+    #append absolute emission values to emission lists
+    p2u_emm1 = append(p2u_emm1, pasture_to_urban_emissions1)
+    p2u_emm2 = append(p2u_emm2, pasture_to_urban_emissions2)
+    p2u_emm3 = append(p2u_emm3, pasture_to_urban_emissions3)
+    p2c_emm1 = append(p2c_emm1, pasture_to_cropland_emissions1)
+    p2c_emm2 = append(p2c_emm2, pasture_to_cropland_emissions2)
+    p2c_emm3 = append(p2c_emm3, pasture_to_cropland_emissions3)
+    
+    print(paste0("pasture_to_urban_emissions1 subtile ", basename(tilefolder), ": ", pasture_to_urban_emissions1))
+    print(paste0("pasture_to_urban_emissions2 subtile ", basename(tilefolder), ": ", pasture_to_urban_emissions2))
+    print(paste0("pasture_to_urban_emissions3 subtile ", basename(tilefolder), ": ", pasture_to_urban_emissions3))
+    
+    print(paste0("pasture_to_cropland_emissions1 subtile ", basename(tilefolder), ": ", pasture_to_cropland_emissions1))
+    print(paste0("pasture_to_cropland_emissions2 subtile ", basename(tilefolder), ": ", pasture_to_cropland_emissions2))
+    print(paste0("pasture_to_cropland_emissions3 subtile ", basename(tilefolder), ": ", pasture_to_cropland_emissions3))
+
+  }
+  
+  #remove all values 10000 and higher from emission lists (these are probably errors from empty tiles)
+  p2u_emm1 = p2u_emm1[p2u_emm1<10000]
+  p2u_emm2 = p2u_emm2[p2u_emm2<10000]
+  p2u_emm3 = p2u_emm3[p2u_emm3<10000]
+  p2c_emm1 = p2c_emm1[p2c_emm1<10000]
+  p2c_emm2 = p2c_emm2[p2c_emm2<10000]
+  p2c_emm3 = p2c_emm3[p2c_emm3<10000]
+  
+  #print emission sums
+  print(paste0("pasture_to_urban_emissions1 tile ", basename(folder), ": ", sum(p2u_emm1)))
+  print(paste0("pasture_to_urban_emissions2 tile ", basename(folder), ": ", sum(p2u_emm2)))
+  print(paste0("pasture_to_urban_emissions3 tile ", basename(folder), ": ", sum(p2u_emm3)))
+  print(paste0("pasture_to_cropland_emissions1 tile ", basename(folder), ": ", sum(p2c_emm1)))
+  print(paste0("pasture_to_cropland_emissions2 tile ", basename(folder), ": ", sum(p2c_emm2)))
+  print(paste0("pasture_to_cropland_emissions3 tile ", basename(folder), ": ", sum(p2c_emm3)))
+}
+```
+
+# Detect LULC changes from forest to urban, cropland, and pasture
+
+```{r}
+#load OSMlanduse change rasters
+forest_to_urban = raster('./data/osmchange_forest_to_urban.tif')
+forest_to_cropland = raster('./data/osmchange_forest_to_cropland.tif')
+forest_to_pasture = raster('./data/osmchange_forest_to_pasture.tif')
+
+#define folder with Landsat NDMI tiles and list subfolders
+parent.folder <- './data/landsat/NDMI'
+sub.folders <- list.dirs(parent.folder, recursive=TRUE)[-1]
+
+#iterate over the tile folders
+for (folder in sub.folders){ 
+  
+  #change working directory to the tile folder
+  setwd(folder)
+  
+  
+  ###intersect extent and generate rasterbrick###
+  
+  print(paste0('intersecting image extents for ndmi tile', basename(folder)))
+  
+  fl <- list.files(pattern = "\\.tif$") # tile's raster list
+  
+  ext <- intersectExtent(lapply(fl, brick)) # calculate tile's intersect extent
+  
+  for (i in 1:length(fl)){
+    rast <- crop(raster(fl[i]), ext) # create extent image
+    writeRaster(rast, paste0(names(rast), '_ext.tif'), format = "GTiff", dataype = "INT32", overwrite = T) # output 
+  }
+  
+  fl <- list.files(pattern = "\\_ext.tif$") # tile's raster list
+  
+  #cut tile into smaller tiles using subsetUTM function (from genTileUTM.R)
+  for (i in 1:length(fl)){
+    x = raster(fl[i])
+    ce = subsetUTM(x, 1000)
+  }
+  
+  #make empty emission lists
+  f2u_emm1 = c()
+  f2u_emm2 = c()
+  f2u_emm3 = c()
+  f2c_emm1 = c()
+  f2c_emm2 = c()
+  f2c_emm3 = c()
+  f2p_emm1 = c()
+  f2p_emm2 = c()
+  f2p_emm3 = c()
+  
+  #iterate over the sub-tile folders
+  tile.folders <- list.dirs(folder, recursive=TRUE)[-1]
+  
+  for (tilefolder in tile.folders){
+    
+    #change working directory to the tile folder
+    setwd(tilefolder)
+  
+    fl <- list.files(pattern = "\\_ext.tif$") # tile's raster list
+    
+    #crop OSMlanduse change rasters
+    tileext <- intersectExtent(lapply(fl, brick)) # calculate subtile's intersect extent
+    forest_to_urban_tile <- crop(forest_to_urban, tileext) # create extent image
+    forest_to_cropland_tile <- crop(forest_to_cropland, tileext) # create extent image
+    forest_to_pasture_tile <- crop(forest_to_pasture, tileext) # create extent image
+    
+    #generate empty list to store new file names
+    your_length <- 0
+    fl2 <- rep(NA, your_length)
+    fl3 <- rep(NA, your_length)
+    
+    #generate new file names and append them to fl2
+    for (file in fl){
+      d <- file
+      n = paste0(substr(d, 0, 2), substr(d, 4, 4), substr(d, 6, 11), substr(d, 13, 16))
+      date = paste0(substr(d, 13, 16), sep = "/", substr(d, 17, 18), sep = "/", substr(d, 19, 20))
+      name = paste0(n, date.to.DOY(date=date, format = "yyyy/mm/dd"),substr(d, 25, 28))
+      if (nchar(name) < 19) {name = paste0(substr(name, 1, 13), sep = "00", substr(name, 14, 18))}
+      else if (nchar(name) < 20) {name = paste0(substr(name, 1, 13), sep = "0", substr(name, 14, 19))}
+      fl2 <- c(fl2, name)
+    }
+    
+    #rename files
+    file.rename(fl, fl2)
+    
+    print(paste0('creating raster brick for ndmi tile', basename(tilefolder)))
+    ndmi = brick(lapply(fl2, raster))#createbrick
+    
+    # assign NA value
+    ndmi[ndmi == 0] <- NA
+    
+    # reassign layer names to raster brick layers
+    for (file in fl2){
+      name = substr(file, 0, 16)
+      fl3 <- c(fl3, name)
+    }
+    
+    names(ndmi) <- fl3
+    
+    
+    ###Run BFM###
+    print(paste0('running bfm for ndmi tile', basename(tilefolder)))
+    #start of monitoring period: year 2018, day 60
+    bfm_ndmi_2_roc = bfmSpatial(ndmi, start=c(2018,60), order=2, history = c("ROC"), mc.cores = 16)
+    
+    ###APPLY CHANGE THRESHOLDS###
+    
+    print(paste0('creating change map for ndmi tile', basename(tilefolder)))
+    
+    change = bfm_ndmi_2_roc[[1]]
+    magn = bfm_ndmi_2_roc[[2]]/10000
+    magn_bkp = magn
+    magn_bkp[is.na(change)] = NA
+    bfm_ndmi_2_roc_magnthresh5 = magn_bkp
+    
+    names(bfm_ndmi_2_roc_magnthresh5) = 'bfm_ndmi_2_roc_magnthresh5'
+    
+    bfm_ndmi_2_roc_magnthresh5[(magn_bkp>-0.05) & (magn_bkp<0.05)] = NA
+    
+    
+    ###Derive overlap, make plots and CSVs###
+    
+    print(paste0('deriving overlap, making plots and CSV for ndmi tile', basename(tilefolder)))
+
+    #bfm change raster
+    w = bfm_ndmi_2_roc_magnthresh5
+    
+    #OSMlanduse change raster
+    x = forest_to_urban_tile
+    y = forest_to_cropland_tile
+    z = forest_to_pasture_tile
+    
+    #derive overlap forest_to_bla
+    overlap_x = mask(crop(w, x), x)
+    overlap_y = mask(crop(w, y), y)
+    overlap_z = mask(crop(w, z), z)
+    
+    #export change maps as tiff
+    mappath_x = paste(names(w), "_to_urban", ".png", sep = "")
+    writeRaster(overlap_x, mappath_x, format = "GTiff", overwrite = T)
+    mappath_y = paste(names(w), "_to_cropland", ".png", sep = "")
+    writeRaster(overlap_y, mappath_y, format = "GTiff", overwrite = T)
+    mappath_z = paste(names(w), "_to_pasture", ".png", sep = "")
+    writeRaster(overlap_z, mappath_z, format = "GTiff", overwrite = T)
+    
+    #calculate number of overlapping cells
+    overlap_x[!is.na(overlap_x)]<-1
+    overlap_y[!is.na(overlap_y)]<-1
+    overlap_z[!is.na(overlap_z)]<-1
+    fx= data.frame(freq(overlap_x))
+    fy= data.frame(freq(overlap_y))
+    fz= data.frame(freq(overlap_z))
+    
+    #calculate absolute emissions
+    forest_to_urban_emissions1 = fx[1,2] * 0.09 * 149
+    forest_to_urban_emissions2 = fx[1,2] * 0.09 * 156
+    forest_to_urban_emissions3 = fx[1,2] * 0.09 * 198
+    
+    forest_to_cropland_emissions1 = fy[1,2] * 0.09 * 148
+    forest_to_cropland_emissions2 = fy[1,2] * 0.09 * 155
+    forest_to_cropland_emissions3 = fy[1,2] * 0.09 * 197
+    
+    forest_to_pasture_emissions1 = fz[1,2] * 0.09 * 112.5
+    forest_to_pasture_emissions2 = fz[1,2] * 0.09 * 119.5
+    forest_to_pasture_emissions3 = fz[1,2] * 0.09 * 161.5
+    
+    #append absolute emission values to emission lists
+    f2u_emm1 = append(f2u_emm1, forest_to_urban_emissions1)
+    f2u_emm2 = append(f2u_emm2, forest_to_urban_emissions2)
+    f2u_emm3 = append(f2u_emm3, forest_to_urban_emissions3)
+    f2c_emm1 = append(f2c_emm1, forest_to_cropland_emissions1)
+    f2c_emm2 = append(f2c_emm2, forest_to_cropland_emissions2)
+    f2c_emm3 = append(f2c_emm3, forest_to_cropland_emissions3)
+    f2p_emm1 = append(f2p_emm1, forest_to_pasture_emissions1)
+    f2p_emm2 = append(f2p_emm2, forest_to_pasture_emissions2)
+    f2p_emm3 = append(f2p_emm3, forest_to_pasture_emissions3)
+    
+    print(paste0("forest_to_urban_emissions1 subtile ", basename(tilefolder), ": ", forest_to_urban_emissions1))
+    print(paste0("forest_to_urban_emissions2 subtile ", basename(tilefolder), ": ", forest_to_urban_emissions2))
+    print(paste0("forest_to_urban_emissions3 subtile ", basename(tilefolder), ": ", forest_to_urban_emissions3))
+    
+    print(paste0("forest_to_cropland_emissions1 subtile ", basename(tilefolder), ": ", forest_to_cropland_emissions1))
+    print(paste0("forest_to_cropland_emissions2 subtile ", basename(tilefolder), ": ", forest_to_cropland_emissions2))
+    print(paste0("forest_to_cropland_emissions3 subtile ", basename(tilefolder), ": ", forest_to_cropland_emissions3))
+    
+    print(paste0("forest_to_pasture_emissions1 subtile ", basename(tilefolder), ": ", forest_to_pasture_emissions1))
+    print(paste0("forest_to_pasture_emissions2 subtile ", basename(tilefolder), ": ", forest_to_pasture_emissions2))
+    print(paste0("forest_to_pasture_emissions3 subtile ", basename(tilefolder), ": ", forest_to_pasture_emissions3))
+
+  }
+  
+  #remove all values 10000 and higher from emission lists (these are probably errors from empty tiles)
+  f2u_emm1 = f2u_emm1[f2u_emm1<10000]
+  f2u_emm2 = f2u_emm2[f2u_emm2<10000]
+  f2u_emm3 = f2u_emm3[f2u_emm3<10000]
+  f2c_emm1 = f2c_emm1[f2c_emm1<10000]
+  f2c_emm2 = f2c_emm2[f2c_emm2<10000]
+  f2c_emm3 = f2c_emm3[f2c_emm3<10000]
+  f2p_emm1 = f2p_emm1[f2p_emm1<10000]
+  f2p_emm2 = f2p_emm2[f2p_emm2<10000]
+  f2p_emm3 = f2p_emm3[f2p_emm3<10000]
+  
+  #print emission sums
+  print(paste0("forest_to_urban_emissions1 tile ", basename(folder), ": ", sum(f2u_emm1)))
+  print(paste0("forest_to_urban_emissions2 tile ", basename(folder), ": ", sum(f2u_emm2)))
+  print(paste0("forest_to_urban_emissions3 tile ", basename(folder), ": ", sum(f2u_emm3)))
+  print(paste0("forest_to_cropland_emissions1 tile ", basename(folder), ": ", sum(f2c_emm1)))
+  print(paste0("forest_to_cropland_emissions2 tile ", basename(folder), ": ", sum(f2c_emm2)))
+  print(paste0("forest_to_cropland_emissions3 tile ", basename(folder), ": ", sum(f2c_emm3)))
+  print(paste0("forest_to_pasture_emissions1 tile ", basename(folder), ": ", sum(f2p_emm1)))
+  print(paste0("forest_to_pasture_emissions2 tile ", basename(folder), ": ", sum(f2p_emm2)))
+  print(paste0("forest_to_pasture_emissions3 tile ", basename(folder), ": ", sum(f2p_emm3)))
+}
+```
